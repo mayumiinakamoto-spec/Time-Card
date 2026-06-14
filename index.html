@@ -668,12 +668,75 @@ function ListTab({ logs, onDelete, onApprove }) {
   );
 }
 
+// ========== NFC打刻画面 ==========
+function NfcStamp({ staffName, result, onDone }) {
+  const isIn = result?.type === 'in';
+  return (
+    <div style={{
+      minHeight:'100vh', display:'flex', flexDirection:'column',
+      alignItems:'center', justifyContent:'center', padding:'32px 24px',
+      background: isIn ? '#e8f5e9' : '#fff3e0', textAlign:'center'
+    }}>
+      <div style={{fontSize:72, marginBottom:24}}>{isIn ? '🌅' : '🌙'}</div>
+      <div style={{fontSize:28, fontWeight:700, marginBottom:8, color: isIn ? '#2e7d32' : '#e65100'}}>
+        {isIn ? '出勤しました' : '退勤しました'}
+      </div>
+      <div style={{fontSize:20, fontWeight:700, marginBottom:4}}>{staffName}</div>
+      <div style={{fontSize:32, fontWeight:700, margin:'16px 0', color:'var(--text)'}}>
+        {result?.time}
+      </div>
+      <div style={{fontSize:14, color:'var(--text-light)', marginBottom:32}}>{result?.date}</div>
+      <button className="btn-submit" style={{maxWidth:280}} onClick={onDone}>
+        一覧を確認する
+      </button>
+    </div>
+  );
+}
+
 // ========== App ==========
 function App() {
   const [tab, setTab] = useState('in');
   const [logs, setLogs] = useState(()=>load(KEYS.logs,[]));
   const [staffList, setStaffList] = useState(()=>load(KEYS.staff,[]));
   const [toast, setToast] = useState(null);
+  const [nfcResult, setNfcResult] = useState(null);
+
+  // NFCタッチで開かれたとき（?staff=N などのURLパラメーター）
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const staffParam = params.get('staff');
+    if (!staffParam) return;
+
+    const now = new Date();
+    const date = now.toISOString().slice(0,10);
+    const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+
+    // 今日の出勤記録があるか確認
+    const todayLogs = load(KEYS.logs, []);
+    const todayIn = todayLogs.find(l => l.staff === staffParam && l.type === 'in' && l.date === date);
+    const todayOut = todayLogs.find(l => l.staff === staffParam && l.type === 'out' && l.date === date);
+
+    let newLog;
+    if (!todayIn) {
+      // 出勤記録なし → 出勤打刻
+      newLog = { id: Date.now().toString(), type:'in', staff:staffParam, date, time, location:'', tasks:'', createdAt: now.toISOString() };
+    } else if (!todayOut) {
+      // 出勤済み・退勤未記録 → 退勤打刻
+      newLog = { id: Date.now().toString(), type:'out', staff:staffParam, date, time, done:'', undone:'', note:'', approved:false, createdAt: now.toISOString() };
+    } else {
+      // 両方済み → 通知のみ
+      setNfcResult({ type:'done', staffName:staffParam, time, date });
+      return;
+    }
+
+    const updated = [newLog, ...todayLogs];
+    save(KEYS.logs, updated);
+    setLogs(updated);
+    setNfcResult({ type: newLog.type, staffName: staffParam, time, date });
+
+    // URLパラメーターをクリア（ブラウザの履歴を汚さない）
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
 
@@ -708,6 +771,11 @@ function App() {
     { key:'summary',  label:'集計', icon:'📊' },
     { key:'settings', label:'設定', icon:'⚙️' },
   ];
+
+  // NFC打刻結果画面
+  if (nfcResult) {
+    return <NfcStamp staffName={nfcResult.staffName} result={nfcResult} onDone={()=>{ setNfcResult(null); setTab('list'); }} />;
+  }
 
   return (
     <>
