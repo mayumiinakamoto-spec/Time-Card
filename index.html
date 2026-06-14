@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>業務ログ | じもとの洗剤</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --green: #4a7c59;
+      --green-light: #e8f0eb;
+      --green-mid: #6a9e7a;
+      --bg: #f7f5f0;
+      --white: #ffffff;
+      --text: #2d2d2d;
+      --text-light: #6b6b6b;
+      --border: #d8d0c4;
+      --radius: 12px;
+      --shadow: 0 2px 8px rgba(0,0,0,0.08);
+      --orange: #e07b39;
+      --blue: #3a6fa8;
+      --purple: #7c5cbf;
+    }
+    body {
+      font-family: -apple-system, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    #root { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* Header */
+    .header { background: var(--green); color: white; padding: 16px 20px; text-align: center; }
+    .header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.05em; }
+    .header p { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+
+    /* Tab nav */
+    .tab-nav { display: flex; background: var(--white); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; overflow-x: auto; }
+    .tab-nav::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      flex: 0 0 auto;
+      padding: 10px 12px;
+      border: none;
+      background: transparent;
+      font-size: 12px;
+      color: var(--text-light);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      font-family: inherit;
+      white-space: nowrap;
+      min-width: 64px;
+    }
+    .tab-btn .icon { font-size: 16px; }
+    .tab-btn.active { color: var(--green); border-bottom: 3px solid var(--green); font-weight: 700; }
+
+    /* Content */
+    .content { flex: 1; padding: 16px; }
+
+    /* Card */
+    .card { background: var(--white); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); margin-bottom: 16px; }
+    .card-title { font-size: 15px; font-weight: 700; color: var(--green); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+    /* Form */
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 13px; font-weight: 600; color: var(--text-light); margin-bottom: 6px; }
+    .field label .req { color: #e05757; margin-left: 2px; }
+    select, input[type="date"], input[type="time"], input[type="number"], textarea, input[type="text"] {
+      width: 100%; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 16px; font-family: inherit; background: var(--white); color: var(--text);
+      -webkit-appearance: none; appearance: none; transition: border-color 0.2s; outline: none;
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--green-mid); }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b6b6b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px;
+    }
+    textarea { min-height: 90px; resize: vertical; line-height: 1.6; }
+    .date-time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    /* Buttons */
+    .btn-submit {
+      width: 100%; padding: 16px; background: var(--green); color: white; border: none;
+      border-radius: var(--radius); font-size: 16px; font-weight: 700; cursor: pointer;
+      letter-spacing: 0.05em; font-family: inherit; transition: background 0.2s; margin-top: 4px;
+    }
+    .btn-submit:active { background: #2f5238; }
+    .btn-sm {
+      padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; font-family: inherit; border: none; transition: opacity 0.2s;
+    }
+    .btn-sm:active { opacity: 0.7; }
+    .btn-approve { background: #e8f5e9; color: #2e7d32; border: 1.5px solid #a5d6a7; }
+    .btn-approved { background: #2e7d32; color: white; }
+    .btn-danger { background: #fff0f0; color: #c62828; border: 1.5px solid #ffcdd2; }
+    .btn-add { background: var(--green-light); color: var(--green); border: 1.5px solid var(--green-mid); }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--green); color: white; padding: 12px 24px; border-radius: 24px;
+      font-size: 14px; font-weight: 600; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      z-index: 100; animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    /* Filter */
+    .filter-card { background: var(--green-light); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; }
+    .filter-title { font-size: 13px; font-weight: 700; color: var(--green); margin-bottom: 10px; }
+    .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .filter-row.single { grid-template-columns: 1fr; }
+    .filter-card select, .filter-card input { font-size: 14px; padding: 10px 12px; background: var(--white); }
+    .filter-card select { padding-right: 32px; }
+
+    /* Log items */
+    .log-count { font-size: 13px; color: var(--text-light); margin-bottom: 10px; text-align: right; }
+    .log-item { background: var(--white); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
+    .log-header { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+    .log-type-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+    .badge-in { background: #e8f5e9; color: #2e7d32; }
+    .badge-out { background: #fff3e0; color: #e65100; }
+    .badge-week { background: #e8eaf6; color: #3949ab; }
+    .badge-leave { background: #f3e5f5; color: #7b1fa2; }
+    .log-staff { font-size: 14px; font-weight: 700; }
+    .log-date { font-size: 12px; color: var(--text-light); margin-left: auto; }
+    .log-row { display: flex; gap: 8px; padding: 4px 0; border-top: 1px solid #f0ebe4; font-size: 13px; }
+    .log-row:first-child { border-top: none; }
+    .log-label { color: var(--text-light); min-width: 90px; flex-shrink: 0; }
+    .log-value { color: var(--text); white-space: pre-wrap; word-break: break-all; }
+    .log-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .approved-badge { background: #2e7d32; color: white; font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+
+    /* Summary */
+    .summary-month-select { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .summary-month-select input { flex: 1; }
+    .summary-card { background: var(--white); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
+    .summary-name { font-size: 16px; font-weight: 700; color: var(--green); margin-bottom: 12px; }
+    .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-top: 1px solid #f0ebe4; font-size: 14px; }
+    .summary-row:first-child { border-top: none; }
+    .summary-row .label { color: var(--text-light); }
+    .summary-row .value { font-weight: 600; }
+    .summary-row.total { font-size: 16px; }
+    .summary-row.total .value { color: var(--green); font-size: 18px; }
+    .detail-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+    .detail-table th { background: var(--green-light); color: var(--green); padding: 6px 8px; text-align: left; font-weight: 600; }
+    .detail-table td { padding: 6px 8px; border-bottom: 1px solid #f0ebe4; }
+    .detail-table tr:last-child td { border-bottom: none; }
+    .detail-toggle { font-size: 12px; color: var(--green); cursor: pointer; margin-top: 8px; text-decoration: underline; background: none; border: none; font-family: inherit; }
+
+    /* Settings */
+    .staff-list { margin-bottom: 16px; }
+    .staff-row { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--green-light); border-radius: 8px; margin-bottom: 8px; }
+    .staff-row .name { font-weight: 700; font-size: 15px; flex: 1; }
+    .staff-row .wage { font-size: 13px; color: var(--text-light); }
+    .add-staff-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .add-staff-form input { font-size: 15px; }
+
+    /* Empty */
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); }
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; line-height: 1.6; }
+
+    /* Section header */
+    .section-header { font-size: 13px; font-weight: 700; color: var(--text-light); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo } = React;
+
+const LOCATIONS = ['セカンドLabo', '製造所', '自宅', 'イベント会場', 'その他'];
+const LEAVE_TYPES = ['有給休暇', '代休', '振替休日'];
+const TYPES = [
+  { key: 'in',    label: '出勤報告', icon: '🌅', badge: 'badge-in' },
+  { key: 'out',   label: '退勤報告', icon: '🌙', badge: 'badge-out' },
+  { key: 'week',  label: '週報',     icon: '📋', badge: 'badge-week' },
+  { key: 'leave', label: '休暇',     icon: '🌿', badge: 'badge-leave' },
+];
+
+const KEYS = {
+  logs: 'jimotos_logs_v2',
+  staff: 'jimotos_staff_v2',
+};
+
+function load(key, def) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') ?? def; }
+  catch { return def; }
+}
+function save(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+function today() { return new Date().toISOString().slice(0, 10); }
+function nowTime() {
+  const d = new Date();
+  return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+}
+function getWeekStart(dateStr) {
+  const d = new Date(dateStr);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff)).toISOString().slice(0,10);
+}
+function formatDate(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  return `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
+}
+function thisMonth() { return new Date().toISOString().slice(0,7); }
+
+// 出勤・退勤のペアから勤務時間(h)を計算
+function calcHours(inLog, outLog) {
+  if (!inLog || !outLog) return 0;
+  const inDt = new Date(`${inLog.date}T${inLog.time}`);
+  const outDt = new Date(`${outLog.date}T${outLog.time}`);
+  const diff = (outDt - inDt) / 3600000;
+  return diff > 0 ? diff : 0;
+}
+
+// ========== Staff Selector ==========
+function StaffSelect({ value, onChange, staffList }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}>
+      <option value="">選択してください</option>
+      {staffList.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+    </select>
+  );
+}
+
+// ========== Forms ==========
+function InForm({ onSubmit, staffList }) {
+  const [form, setForm] = useState({ staff:'', date:today(), time:nowTime(), location:'', tasks:'' });
+  const set = (k,v) => setForm(f => ({...f,[k]:v}));
+  const handle = e => {
+    e.preventDefault();
+    if (!form.staff || !form.location) return alert('スタッフ名と勤務場所は必須です');
+    onSubmit({ type:'in', ...form, createdAt: new Date().toISOString() });
+    setForm({ staff:'', date:today(), time:nowTime(), location:'', tasks:'' });
+  };
+  return (
+    <form onSubmit={handle}>
+      <div className="card">
+        <div className="card-title">🌅 出勤報告</div>
+        <div className="field"><label>スタッフ名 <span className="req">*</span></label>
+          <StaffSelect value={form.staff} onChange={v=>set('staff',v)} staffList={staffList} />
+        </div>
+        <div className="field"><label>出勤日時</label>
+          <div className="date-time-row">
+            <input type="date" value={form.date} onChange={e=>set('date',e.target.value)} />
+            <input type="time" value={form.time} onChange={e=>set('time',e.target.value)} />
+          </div>
+        </div>
+        <div className="field"><label>勤務場所 <span className="req">*</span></label>
+          <select value={form.location} onChange={e=>set('location',e.target.value)}>
+            <option value="">選択してください</option>
+            {LOCATIONS.map(l=><option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>今日やるタスク</label>
+          <textarea placeholder="例：在庫確認、ラベル貼り付け" value={form.tasks} onChange={e=>set('tasks',e.target.value)} />
+        </div>
+        <button className="btn-submit" type="submit">出勤報告を送信</button>
+      </div>
+    </form>
+  );
+}
+
+function OutForm({ onSubmit, staffList }) {
+  const [form, setForm] = useState({ staff:'', date:today(), time:nowTime(), done:'', undone:'', note:'' });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const handle = e => {
+    e.preventDefault();
+    if (!form.staff) return alert('スタッフ名は必須です');
+    onSubmit({ type:'out', ...form, approved: false, createdAt: new Date().toISOString() });
+    setForm({ staff:'', date:today(), time:nowTime(), done:'', undone:'', note:'' });
+  };
+  return (
+    <form onSubmit={handle}>
+      <div className="card">
+        <div className="card-title">🌙 退勤報告</div>
+        <div className="field"><label>スタッフ名 <span className="req">*</span></label>
+          <StaffSelect value={form.staff} onChange={v=>set('staff',v)} staffList={staffList} />
+        </div>
+        <div className="field"><label>退勤日時</label>
+          <div className="date-time-row">
+            <input type="date" value={form.date} onChange={e=>set('date',e.target.value)} />
+            <input type="time" value={form.time} onChange={e=>set('time',e.target.value)} />
+          </div>
+        </div>
+        <div className="field"><label>完了したタスク</label>
+          <textarea placeholder="今日完了したタスクを記入" value={form.done} onChange={e=>set('done',e.target.value)} />
+        </div>
+        <div className="field"><label>未完了タスク</label>
+          <textarea placeholder="持ち越しになったタスク" value={form.undone} onChange={e=>set('undone',e.target.value)} />
+        </div>
+        <div className="field"><label>連絡事項</label>
+          <textarea placeholder="管理者への連絡・気になったことなど" value={form.note} onChange={e=>set('note',e.target.value)} />
+        </div>
+        <button className="btn-submit" type="submit">退勤報告を送信</button>
+      </div>
+    </form>
+  );
+}
+
+function WeekForm({ onSubmit, staffList }) {
+  const [form, setForm] = useState({ staff:'', weekStart:getWeekStart(today()), done:'', plan:'', question:'' });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const handle = e => {
+    e.preventDefault();
+    if (!form.staff) return alert('スタッフ名は必須です');
+    onSubmit({ type:'week', ...form, createdAt: new Date().toISOString() });
+    setForm({ staff:'', weekStart:getWeekStart(today()), done:'', plan:'', question:'' });
+  };
+  return (
+    <form onSubmit={handle}>
+      <div className="card">
+        <div className="card-title">📋 週報</div>
+        <div className="field"><label>スタッフ名 <span className="req">*</span></label>
+          <StaffSelect value={form.staff} onChange={v=>set('staff',v)} staffList={staffList} />
+        </div>
+        <div className="field"><label>対象週（週の開始日）</label>
+          <input type="date" value={form.weekStart} onChange={e=>set('weekStart',e.target.value)} />
+        </div>
+        <div className="field"><label>今週やったこと</label>
+          <textarea placeholder="今週の作業・成果など" value={form.done} onChange={e=>set('done',e.target.value)} style={{minHeight:'100px'}} />
+        </div>
+        <div className="field"><label>来週やること</label>
+          <textarea placeholder="来週の予定・取り組む作業など" value={form.plan} onChange={e=>set('plan',e.target.value)} style={{minHeight:'100px'}} />
+        </div>
+        <div className="field"><label>相談したいこと</label>
+          <textarea placeholder="困っていること・確認したいことなど" value={form.question} onChange={e=>set('question',e.target.value)} />
+        </div>
+        <button className="btn-submit" type="submit">週報を送信</button>
+      </div>
+    </form>
+  );
+}
+
+function LeaveForm({ onSubmit, staffList }) {
+  const [form, setForm] = useState({ staff:'', date:today(), leaveType:'有給休暇', note:'' });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const handle = e => {
+    e.preventDefault();
+    if (!form.staff) return alert('スタッフ名は必須です');
+    onSubmit({ type:'leave', ...form, approved: false, createdAt: new Date().toISOString() });
+    setForm({ staff:'', date:today(), leaveType:'有給休暇', note:'' });
+  };
+  return (
+    <form onSubmit={handle}>
+      <div className="card">
+        <div className="card-title">🌿 休暇申請</div>
+        <div className="field"><label>スタッフ名 <span className="req">*</span></label>
+          <StaffSelect value={form.staff} onChange={v=>set('staff',v)} staffList={staffList} />
+        </div>
+        <div className="field"><label>休暇取得日</label>
+          <input type="date" value={form.date} onChange={e=>set('date',e.target.value)} />
+        </div>
+        <div className="field"><label>休暇の種類</label>
+          <select value={form.leaveType} onChange={e=>set('leaveType',e.target.value)}>
+            {LEAVE_TYPES.map(l=><option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>備考</label>
+          <textarea placeholder="理由・連絡事項など（任意）" value={form.note} onChange={e=>set('note',e.target.value)} />
+        </div>
+        <button className="btn-submit" type="submit">休暇申請を送信</button>
+      </div>
+    </form>
+  );
+}
+
+// ========== Log Item ==========
+function LogItem({ log, onDelete, onApprove }) {
+  const typeInfo = TYPES.find(t=>t.key===log.type);
+  const rows = [];
+  if (log.type==='in') {
+    rows.push({ label:'出勤日時', value:`${formatDate(log.date)} ${log.time}` });
+    if (log.location) rows.push({ label:'勤務場所', value:log.location });
+    if (log.tasks) rows.push({ label:'今日のタスク', value:log.tasks });
+  } else if (log.type==='out') {
+    rows.push({ label:'退勤日時', value:`${formatDate(log.date)} ${log.time}` });
+    if (log.done) rows.push({ label:'完了タスク', value:log.done });
+    if (log.undone) rows.push({ label:'未完了', value:log.undone });
+    if (log.note) rows.push({ label:'連絡事項', value:log.note });
+  } else if (log.type==='week') {
+    if (log.weekStart) rows.push({ label:'対象週', value:`${formatDate(log.weekStart)}〜` });
+    if (log.done) rows.push({ label:'今週やったこと', value:log.done });
+    if (log.plan) rows.push({ label:'来週やること', value:log.plan });
+    if (log.question) rows.push({ label:'相談', value:log.question });
+  } else if (log.type==='leave') {
+    rows.push({ label:'休暇取得日', value:formatDate(log.date) });
+    rows.push({ label:'種類', value:log.leaveType });
+    if (log.note) rows.push({ label:'備考', value:log.note });
+  }
+
+  const needsApproval = log.type==='out' || log.type==='leave';
+
+  return (
+    <div className="log-item">
+      <div className="log-header">
+        <span className={`log-type-badge ${typeInfo?.badge}`}>{typeInfo?.icon} {typeInfo?.label}</span>
+        <span className="log-staff">{log.staff}</span>
+        {log.approved && <span className="approved-badge">✓ 承認済</span>}
+        <span className="log-date">
+          {log.createdAt ? new Date(log.createdAt).toLocaleDateString('ja-JP',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}
+        </span>
+      </div>
+      <div className="log-body">
+        {rows.map((r,i)=>(
+          <div key={i} className="log-row">
+            <span className="log-label">{r.label}</span>
+            <span className="log-value">{r.value}</span>
+          </div>
+        ))}
+      </div>
+      <div className="log-actions">
+        {needsApproval && !log.approved && (
+          <button className="btn-sm btn-approve" onClick={()=>onApprove(log.id)}>承認する</button>
+        )}
+        {needsApproval && log.approved && (
+          <button className="btn-sm btn-approved" disabled>✓ 承認済み</button>
+        )}
+        <button className="btn-sm btn-danger" onClick={()=>{ if(confirm('この記録を削除しますか？')) onDelete(log.id) }}>削除</button>
+      </div>
+    </div>
+  );
+}
+
+// ========== Summary Tab ==========
+function SummaryTab({ logs, staffList }) {
+  const [month, setMonth] = useState(thisMonth);
+  const [openStaff, setOpenStaff] = useState(null);
+
+  const summaries = useMemo(() => {
+    return staffList.map(staff => {
+      const staffLogs = logs.filter(l => l.staff === staff.name && (l.date||'').startsWith(month));
+
+      // ペアリング：同日の出勤・退勤
+      const inLogs = staffLogs.filter(l=>l.type==='in');
+      const outLogs = staffLogs.filter(l=>l.type==='out');
+
+      const pairs = [];
+      inLogs.forEach(inLog => {
+        const matchOut = outLogs.find(o => o.date === inLog.date);
+        const hours = matchOut ? calcHours(inLog, matchOut) : null;
+        pairs.push({ date: inLog.date, inTime: inLog.time, outTime: matchOut?.time||null, hours, location: inLog.location });
+      });
+
+      const leaveLogs = staffLogs.filter(l=>l.type==='leave');
+      const leaveHoursPerDay = 8;
+      const leaveHours = leaveLogs.length * leaveHoursPerDay;
+
+      const workHours = pairs.reduce((sum, p) => sum + (p.hours||0), 0);
+      const totalHours = workHours + leaveHours;
+      const wage = Math.floor(totalHours * staff.hourlyRate);
+
+      return { staff, pairs, leaveLogs, workHours, leaveHours, totalHours, wage };
+    });
+  }, [logs, staffList, month]);
+
+  return (
+    <div>
+      <div className="summary-month-select">
+        <span style={{fontSize:14,fontWeight:700,color:'var(--text-light)',whiteSpace:'nowrap'}}>対象月</span>
+        <input type="month" value={month} onChange={e=>setMonth(e.target.value)} />
+      </div>
+
+      {summaries.map(s => (
+        <div key={s.staff.id} className="summary-card">
+          <div className="summary-name">👤 {s.staff.name}</div>
+          <div className="summary-row">
+            <span className="label">勤務時間（出退勤）</span>
+            <span className="value">{s.workHours.toFixed(1)} 時間</span>
+          </div>
+          <div className="summary-row">
+            <span className="label">休暇日数</span>
+            <span className="value">{s.leaveLogs.length} 日（{s.leaveHours}h換算）</span>
+          </div>
+          <div className="summary-row">
+            <span className="label">合計時間</span>
+            <span className="value">{s.totalHours.toFixed(1)} 時間</span>
+          </div>
+          <div className="summary-row">
+            <span className="label">時給</span>
+            <span className="value">¥{s.staff.hourlyRate.toLocaleString()}</span>
+          </div>
+          <div className="summary-row total">
+            <span className="label">概算給与</span>
+            <span className="value">¥{s.wage.toLocaleString()}</span>
+          </div>
+
+          <button className="detail-toggle" onClick={()=>setOpenStaff(openStaff===s.staff.id ? null : s.staff.id)}>
+            {openStaff===s.staff.id ? '▲ 詳細を閉じる' : '▼ 日別詳細を見る'}
+          </button>
+
+          {openStaff===s.staff.id && (
+            <table className="detail-table" style={{marginTop:10}}>
+              <thead>
+                <tr><th>日付</th><th>出勤</th><th>退勤</th><th>時間</th></tr>
+              </thead>
+              <tbody>
+                {s.pairs.map((p,i)=>(
+                  <tr key={i}>
+                    <td>{formatDate(p.date)}</td>
+                    <td>{p.inTime}</td>
+                    <td>{p.outTime || <span style={{color:'#aaa'}}>未記録</span>}</td>
+                    <td>{p.hours != null ? p.hours.toFixed(1)+'h' : '-'}</td>
+                  </tr>
+                ))}
+                {s.leaveLogs.map((l,i)=>(
+                  <tr key={'l'+i} style={{background:'#f8f0ff'}}>
+                    <td>{formatDate(l.date)}</td>
+                    <td colSpan={2} style={{color:'#7b1fa2'}}>{l.leaveType}</td>
+                    <td>8.0h</td>
+                  </tr>
+                ))}
+                {s.pairs.length===0 && s.leaveLogs.length===0 && (
+                  <tr><td colSpan={4} style={{textAlign:'center',color:'#aaa',padding:'12px'}}>記録なし</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ))}
+
+      {staffList.length === 0 && (
+        <div className="empty-state">
+          <div className="icon">👤</div>
+          <p>「設定」タブでスタッフを追加してください。</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ========== Settings Tab ==========
+function SettingsTab({ staffList, setStaffList }) {
+  const [name, setName] = useState('');
+  const [rate, setRate] = useState('');
+
+  const addStaff = () => {
+    const n = name.trim();
+    const r = parseInt(rate);
+    if (!n) return alert('名前を入力してください');
+    if (!r || r < 0) return alert('正しい時給を入力してください');
+    if (staffList.find(s=>s.name===n)) return alert('同じ名前のスタッフが既にいます');
+    const updated = [...staffList, { id: Date.now().toString(), name: n, hourlyRate: r }];
+    setStaffList(updated);
+    save(KEYS.staff, updated);
+    setName(''); setRate('');
+  };
+
+  const removeStaff = (id) => {
+    if (!confirm('このスタッフを削除しますか？')) return;
+    const updated = staffList.filter(s=>s.id!==id);
+    setStaffList(updated);
+    save(KEYS.staff, updated);
+  };
+
+  const updateRate = (id, val) => {
+    const r = parseInt(val);
+    if (!r || r < 0) return;
+    const updated = staffList.map(s=>s.id===id ? {...s, hourlyRate:r} : s);
+    setStaffList(updated);
+    save(KEYS.staff, updated);
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">👥 スタッフ管理</div>
+        <div className="section-header">登録済みスタッフ</div>
+        <div className="staff-list">
+          {staffList.length===0 && <p style={{fontSize:13,color:'var(--text-light)',marginBottom:12}}>まだスタッフが登録されていません</p>}
+          {staffList.map(s=>(
+            <div key={s.id} className="staff-row">
+              <span className="name">{s.name}</span>
+              <span className="wage">時給</span>
+              <input type="number" defaultValue={s.hourlyRate} style={{width:90,fontSize:14,padding:'6px 8px'}}
+                onBlur={e=>updateRate(s.id, e.target.value)} />
+              <span style={{fontSize:13}}>円</span>
+              <button className="btn-sm btn-danger" onClick={()=>removeStaff(s.id)}>削除</button>
+            </div>
+          ))}
+        </div>
+
+        <div className="section-header" style={{marginTop:8}}>スタッフを追加</div>
+        <div className="add-staff-form">
+          <input type="text" placeholder="名前" value={name} onChange={e=>setName(e.target.value)} />
+          <input type="number" placeholder="時給（円）" value={rate} onChange={e=>setRate(e.target.value)} />
+        </div>
+        <button className="btn-sm btn-add" style={{width:'100%',padding:'12px',fontSize:15,marginTop:4}} onClick={addStaff}>
+          ＋ スタッフを追加する
+        </button>
+      </div>
+
+      <div className="card" style={{background:'#fff8e1'}}>
+        <div className="card-title" style={{color:'#b07d00'}}>ℹ️ 給与計算について</div>
+        <p style={{fontSize:13,lineHeight:1.7,color:'var(--text-light)'}}>
+          出勤・退勤の時刻から自動で勤務時間を計算します。<br/>
+          休暇（有給・代休・振休）は <strong>1日＝8時間</strong> として換算されます。<br/>
+          「集計」タブで月ごとの給与見込みを確認できます。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ========== List Tab ==========
+function ListTab({ logs, onDelete, onApprove }) {
+  const [filter, setFilter] = useState({ date:'', staff:'', type:'' });
+  const setF = (k,v) => setFilter(f=>({...f,[k]:v}));
+
+  const allStaff = [...new Set(logs.map(l=>l.staff).filter(Boolean))].sort();
+
+  const filtered = logs.filter(l => {
+    if (filter.type && l.type!==filter.type) return false;
+    if (filter.staff && l.staff!==filter.staff) return false;
+    if (filter.date) {
+      const d = l.date || l.weekStart || (l.createdAt?l.createdAt.slice(0,10):'');
+      if (d!==filter.date) return false;
+    }
+    return true;
+  });
+
+  const hasFilter = filter.type||filter.staff||filter.date;
+
+  return (
+    <div>
+      <div className="filter-card">
+        <div className="filter-title">🔍 絞り込み</div>
+        <div className="filter-row">
+          <select value={filter.type} onChange={e=>setF('type',e.target.value)}>
+            <option value="">タイプ：全て</option>
+            {TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
+          </select>
+          <select value={filter.staff} onChange={e=>setF('staff',e.target.value)}>
+            <option value="">スタッフ：全て</option>
+            {allStaff.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="filter-row single">
+          <input type="date" value={filter.date} onChange={e=>setF('date',e.target.value)} />
+        </div>
+        {hasFilter && (
+          <button className="btn-sm btn-danger" style={{marginTop:4}} onClick={()=>setFilter({date:'',staff:'',type:''})}>リセット</button>
+        )}
+      </div>
+
+      <div className="log-count">{filtered.length} 件</div>
+
+      {filtered.length===0 ? (
+        <div className="empty-state">
+          <div className="icon">📭</div>
+          <p>記録がありません。<br/>各タブから報告を送信してください。</p>
+        </div>
+      ) : (
+        filtered.map(l=><LogItem key={l.id} log={l} onDelete={onDelete} onApprove={onApprove} />)
+      )}
+    </div>
+  );
+}
+
+// ========== App ==========
+function App() {
+  const [tab, setTab] = useState('in');
+  const [logs, setLogs] = useState(()=>load(KEYS.logs,[]));
+  const [staffList, setStaffList] = useState(()=>load(KEYS.staff,[]));
+  const [toast, setToast] = useState(null);
+
+  const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
+
+  const handleSubmit = data => {
+    const newLog = { ...data, id: Date.now().toString() };
+    const updated = [newLog, ...logs];
+    setLogs(updated);
+    save(KEYS.logs, updated);
+    showToast('送信しました ✓');
+    setTab('list');
+  };
+
+  const handleDelete = id => {
+    const updated = logs.filter(l=>l.id!==id);
+    setLogs(updated);
+    save(KEYS.logs, updated);
+  };
+
+  const handleApprove = id => {
+    const updated = logs.map(l=>l.id===id ? {...l, approved:true} : l);
+    setLogs(updated);
+    save(KEYS.logs, updated);
+    showToast('承認しました ✓');
+  };
+
+  const TABS = [
+    { key:'in',       label:'出勤', icon:'🌅' },
+    { key:'out',      label:'退勤', icon:'🌙' },
+    { key:'week',     label:'週報', icon:'📋' },
+    { key:'leave',    label:'休暇', icon:'🌿' },
+    { key:'list',     label:'一覧', icon:'📂' },
+    { key:'summary',  label:'集計', icon:'📊' },
+    { key:'settings', label:'設定', icon:'⚙️' },
+  ];
+
+  return (
+    <>
+      <div className="header">
+        <h1>📝 業務ログ</h1>
+        <p>じもとの洗剤</p>
+      </div>
+
+      <div className="tab-nav">
+        {TABS.map(t=>(
+          <button key={t.key} className={`tab-btn ${tab===t.key?'active':''}`} onClick={()=>setTab(t.key)}>
+            <span className="icon">{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="content">
+        {tab==='in'       && <InForm onSubmit={handleSubmit} staffList={staffList} />}
+        {tab==='out'      && <OutForm onSubmit={handleSubmit} staffList={staffList} />}
+        {tab==='week'     && <WeekForm onSubmit={handleSubmit} staffList={staffList} />}
+        {tab==='leave'    && <LeaveForm onSubmit={handleSubmit} staffList={staffList} />}
+        {tab==='list'     && <ListTab logs={logs} onDelete={handleDelete} onApprove={handleApprove} />}
+        {tab==='summary'  && <SummaryTab logs={logs} staffList={staffList} />}
+        {tab==='settings' && <SettingsTab staffList={staffList} setStaffList={setStaffList} />}
+      </div>
+
+      {toast && <div className="toast">{toast}</div>}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
