@@ -225,12 +225,21 @@ function calcHours(inLog, outLog) {
 }
 
 // ========== Staff Selector ==========
+// 自由入力＋過去に使った名前を候補として表示
 function StaffSelect({ value, onChange, staffList }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}>
-      <option value="">選択してください</option>
-      {staffList.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-    </select>
+    <>
+      <input
+        type="text"
+        list="staff-names"
+        placeholder="名前を入力してください"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
+      <datalist id="staff-names">
+        {staffList.map(s => <option key={s.id} value={s.name} />)}
+      </datalist>
+    </>
   );
 }
 
@@ -741,10 +750,18 @@ function App() {
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
 
   const handleSubmit = data => {
-    const newLog = { ...data, id: Date.now().toString() };
+    const newLog = { ...data, staff: (data.staff || '').trim(), id: Date.now().toString() };
     const updated = [newLog, ...logs];
     setLogs(updated);
     save(KEYS.logs, updated);
+
+    // 初めての名前なら自動でスタッフ一覧に登録（時給は設定タブであとから入力）
+    if (newLog.staff && !staffList.find(s => s.name === newLog.staff)) {
+      const newStaff = [...staffList, { id: Date.now().toString() + '-s', name: newLog.staff, hourlyRate: 0 }];
+      setStaffList(newStaff);
+      save(KEYS.staff, newStaff);
+    }
+
     showToast('送信しました ✓');
     setTab('list');
   };
