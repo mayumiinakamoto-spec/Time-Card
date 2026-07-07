@@ -190,7 +190,38 @@ const KEYS = {
   logs: 'jimotos_logs_v2',
   staff: 'jimotos_staff_v2',
   me: 'jimotos_me_v1',
+  sync: 'jimotos_sync_url_v1',
 };
+
+// ===== クラウド同期（Google Apps Script） =====
+function getSyncUrl() { return load(KEYS.sync, ''); }
+
+async function cloudPost(payload) {
+  const url = getSyncUrl();
+  if (!url) return false;
+  try {
+    await fetch(url, { method: 'POST', body: JSON.stringify(payload) });
+    return true;
+  } catch (e) { console.warn('cloud sync failed', e); return false; }
+}
+
+async function cloudFetchLogs() {
+  const url = getSyncUrl();
+  if (!url) return null;
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    return Array.isArray(d.logs) ? d.logs : null;
+  } catch (e) { console.warn('cloud fetch failed', e); return null; }
+}
+
+// クラウドとローカルの記録をID基準で統合（同じIDはクラウド優先）
+function mergeLogs(local, cloud) {
+  const map = new Map();
+  local.forEach(l => map.set(l.id, l));
+  cloud.forEach(l => map.set(l.id, l));
+  return [...map.values()].sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+}
 
 function load(key, def) {
   try { return JSON.parse(localStorage.getItem(key) || 'null') ?? def; }
@@ -673,6 +704,16 @@ function ProfileForm({ initial, onSave, onCancel, onDelete }) {
 
 function SettingsTab({ staffList, setStaffList, me, setMe }) {
   const [editing, setEditing] = useState(null); // 'new' | staff.id | null
+  const [syncUrl, setSyncUrl] = useState(()=>load(KEYS.sync,''));
+
+  const saveSyncUrl = () => {
+    const u = syncUrl.trim();
+    if (u && !u.startsWith('https://script.google.com/')) {
+      return alert('Google Apps ScriptのURL（https://script.google.com/…）を入力してください');
+    }
+    save(KEYS.sync, u);
+    alert(u ? 'クラウド同期を設定しました ☁️' : 'クラウド同期を解除しました');
+  };
 
   const persist = updated => { setStaffList(updated); save(KEYS.staff, updated); setEditing(null); };
 
@@ -740,6 +781,20 @@ function SettingsTab({ staffList, setStaffList, me, setMe }) {
         </div>
         <button className="btn-sm btn-add" style={{width:'100%',padding:'12px',fontSize:15,marginTop:4}} onClick={()=>setEditing('new')}>
           ＋ スタッフを追加する
+        </button>
+      </div>
+
+      <div className="card">
+        <div className="card-title">☁️ クラウド同期</div>
+        <p style={{fontSize:13, color:'var(--text-light)', marginBottom:10, lineHeight:1.6}}>
+          Googleスプレッドシートと連携すると、全スタッフの記録が1か所に集まり、管理者がどの端末からでも確認できます。
+        </p>
+        <div className="field"><label>同期URL（Google Apps Script）</label>
+          <input type="text" placeholder="https://script.google.com/macros/s/…/exec"
+            value={syncUrl} onChange={e=>setSyncUrl(e.target.value)} />
+        </div>
+        <button className="btn-sm btn-add" style={{width:'100%',padding:'12px',fontSize:15}} onClick={saveSyncUrl}>
+          同期URLを保存
         </button>
       </div>
 
@@ -844,8 +899,31 @@ function App() {
   const [toast, setToast] = useState(null);
   const [nfcResult, setNfcResult] = useState(null);
   const [me, setMe] = useState(()=>load(KEYS.me,''));
+  const [syncing, setSyncing] = useState(false);
 
   const updateMe = name => { setMe(name); save(KEYS.me, name); };
+
+  // クラウドから最新の記録を取得してローカルと統合
+  const syncFromCloud = useCallback(async (silent) => {
+    if (!getSyncUrl()) return;
+    setSyncing(true);
+    const cloud = await cloudFetchLogs();
+    setSyncing(false);
+    if (cloud) {
+      setLogs(prev => {
+        const merged = mergeLogs(prev, cloud);
+        save(KEYS.logs, merged);
+        return merged;
+      });
+      if (!silent) showToast('クラウドと同期しました ☁️');
+    } else if (!silent) {
+      showToast('同期に失敗しました');
+    }
+  }, []);
+
+  // 起動時と、一覧・給与タブを開いたときに自動同期
+  useEffect(() => { syncFromCloud(true); }, []);
+  useEffect(() => { if (tab==='list' || tab==='summary') syncFromCloud(true); }, [tab]);
 
   // NFCタッチで開かれたとき（?staff=N などのURLパラメーター）
   useEffect(() => {
@@ -878,6 +956,7 @@ function App() {
     const updated = [newLog, ...todayLogs];
     save(KEYS.logs, updated);
     setLogs(updated);
+    cloudPost({ action:'add', log:newLog });
     setNfcResult({ type: newLog.type, staffName: staffParam, time, date });
 
     // URLパラメーターをクリア（ブラウザの履歴を汚さない）
@@ -902,6 +981,7 @@ function App() {
     // 送信した名前を「この端末の利用者」として記憶 → 次回から自動入力
     if (newLog.staff) updateMe(newLog.staff);
 
+    cloudPost({ action:'add', log:newLog });
     showToast('送信しました ✓');
     setTab('list');
   };
@@ -910,12 +990,14 @@ function App() {
     const updated = logs.filter(l=>l.id!==id);
     setLogs(updated);
     save(KEYS.logs, updated);
+    cloudPost({ action:'delete', id });
   };
 
   const handleApprove = id => {
     const updated = logs.map(l=>l.id===id ? {...l, approved:true} : l);
     setLogs(updated);
     save(KEYS.logs, updated);
+    cloudPost({ action:'approve', id });
     showToast('承認しました ✓');
   };
 
