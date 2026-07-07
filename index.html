@@ -189,6 +189,7 @@ const TYPES = [
 const KEYS = {
   logs: 'jimotos_logs_v2',
   staff: 'jimotos_staff_v2',
+  me: 'jimotos_me_v1',
 };
 
 function load(key, def) {
@@ -264,14 +265,14 @@ function StaffSelect({ value, onChange, staffList }) {
 }
 
 // ========== Forms ==========
-function InForm({ onSubmit, staffList }) {
-  const [form, setForm] = useState({ staff:'', date:today(), time:nowTime(), location:'', tasks:'' });
+function InForm({ onSubmit, staffList, defaultStaff }) {
+  const [form, setForm] = useState({ staff:defaultStaff||'', date:today(), time:nowTime(), location:'', tasks:'' });
   const set = (k,v) => setForm(f => ({...f,[k]:v}));
   const handle = e => {
     e.preventDefault();
     if (!form.staff || !form.location) return alert('スタッフ名と勤務場所は必須です');
     onSubmit({ type:'in', ...form, createdAt: new Date().toISOString() });
-    setForm({ staff:'', date:today(), time:nowTime(), location:'', tasks:'' });
+    setForm(f => ({ staff:f.staff, date:today(), time:nowTime(), location:'', tasks:'' }));
   };
   return (
     <form onSubmit={handle}>
@@ -301,14 +302,14 @@ function InForm({ onSubmit, staffList }) {
   );
 }
 
-function OutForm({ onSubmit, staffList }) {
-  const [form, setForm] = useState({ staff:'', date:today(), time:nowTime(), done:'', undone:'', note:'' });
+function OutForm({ onSubmit, staffList, defaultStaff }) {
+  const [form, setForm] = useState({ staff:defaultStaff||'', date:today(), time:nowTime(), done:'', undone:'', note:'' });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const handle = e => {
     e.preventDefault();
     if (!form.staff) return alert('スタッフ名は必須です');
     onSubmit({ type:'out', ...form, approved: false, createdAt: new Date().toISOString() });
-    setForm({ staff:'', date:today(), time:nowTime(), done:'', undone:'', note:'' });
+    setForm(f => ({ staff:f.staff, date:today(), time:nowTime(), done:'', undone:'', note:'' }));
   };
   return (
     <form onSubmit={handle}>
@@ -338,14 +339,14 @@ function OutForm({ onSubmit, staffList }) {
   );
 }
 
-function WeekForm({ onSubmit, staffList }) {
-  const [form, setForm] = useState({ staff:'', weekStart:getWeekStart(today()), done:'', plan:'', question:'' });
+function WeekForm({ onSubmit, staffList, defaultStaff }) {
+  const [form, setForm] = useState({ staff:defaultStaff||'', weekStart:getWeekStart(today()), done:'', plan:'', question:'' });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const handle = e => {
     e.preventDefault();
     if (!form.staff) return alert('スタッフ名は必須です');
     onSubmit({ type:'week', ...form, createdAt: new Date().toISOString() });
-    setForm({ staff:'', weekStart:getWeekStart(today()), done:'', plan:'', question:'' });
+    setForm(f => ({ staff:f.staff, weekStart:getWeekStart(today()), done:'', plan:'', question:'' }));
   };
   return (
     <form onSubmit={handle}>
@@ -372,14 +373,14 @@ function WeekForm({ onSubmit, staffList }) {
   );
 }
 
-function LeaveForm({ onSubmit, staffList }) {
-  const [form, setForm] = useState({ staff:'', date:today(), leaveType:'有給休暇', note:'' });
+function LeaveForm({ onSubmit, staffList, defaultStaff }) {
+  const [form, setForm] = useState({ staff:defaultStaff||'', date:today(), leaveType:'有給休暇', note:'' });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const handle = e => {
     e.preventDefault();
     if (!form.staff) return alert('スタッフ名は必須です');
     onSubmit({ type:'leave', ...form, approved: false, createdAt: new Date().toISOString() });
-    setForm({ staff:'', date:today(), leaveType:'有給休暇', note:'' });
+    setForm(f => ({ staff:f.staff, date:today(), leaveType:'有給休暇', note:'' }));
   };
   return (
     <form onSubmit={handle}>
@@ -670,7 +671,7 @@ function ProfileForm({ initial, onSave, onCancel, onDelete }) {
   );
 }
 
-function SettingsTab({ staffList, setStaffList }) {
+function SettingsTab({ staffList, setStaffList, me, setMe }) {
   const [editing, setEditing] = useState(null); // 'new' | staff.id | null
 
   const persist = updated => { setStaffList(updated); save(KEYS.staff, updated); setEditing(null); };
@@ -710,6 +711,17 @@ function SettingsTab({ staffList, setStaffList }) {
 
   return (
     <div>
+      <div className="card">
+        <div className="card-title">📱 この端末を使う人</div>
+        <p style={{fontSize:13, color:'var(--text-light)', marginBottom:10}}>
+          ここで選んだ名前が、出勤・退勤などの報告に自動で入力されます。
+        </p>
+        <select value={me} onChange={e=>setMe(e.target.value)}>
+          <option value="">未設定（毎回入力する）</option>
+          {staffList.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
+        </select>
+      </div>
+
       <div className="card">
         <div className="card-title">👥 スタッフのプロフィール</div>
         {staffList.length===0 && <p style={{fontSize:13,color:'var(--text-light)',marginBottom:12}}>まだスタッフが登録されていません</p>}
@@ -831,6 +843,9 @@ function App() {
   const [staffList, setStaffList] = useState(()=>load(KEYS.staff,[]));
   const [toast, setToast] = useState(null);
   const [nfcResult, setNfcResult] = useState(null);
+  const [me, setMe] = useState(()=>load(KEYS.me,''));
+
+  const updateMe = name => { setMe(name); save(KEYS.me, name); };
 
   // NFCタッチで開かれたとき（?staff=N などのURLパラメーター）
   useEffect(() => {
@@ -884,6 +899,9 @@ function App() {
       save(KEYS.staff, newStaff);
     }
 
+    // 送信した名前を「この端末の利用者」として記憶 → 次回から自動入力
+    if (newLog.staff) updateMe(newLog.staff);
+
     showToast('送信しました ✓');
     setTab('list');
   };
@@ -933,13 +951,13 @@ function App() {
       </div>
 
       <div className="content">
-        {tab==='in'       && <InForm onSubmit={handleSubmit} staffList={staffList} />}
-        {tab==='out'      && <OutForm onSubmit={handleSubmit} staffList={staffList} />}
-        {tab==='week'     && <WeekForm onSubmit={handleSubmit} staffList={staffList} />}
-        {tab==='leave'    && <LeaveForm onSubmit={handleSubmit} staffList={staffList} />}
+        {tab==='in'       && <InForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} />}
+        {tab==='out'      && <OutForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} />}
+        {tab==='week'     && <WeekForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} />}
+        {tab==='leave'    && <LeaveForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} />}
         {tab==='list'     && <ListTab logs={logs} onDelete={handleDelete} onApprove={handleApprove} />}
         {tab==='summary'  && <SummaryTab logs={logs} staffList={staffList} />}
-        {tab==='settings' && <SettingsTab staffList={staffList} setStaffList={setStaffList} />}
+        {tab==='settings' && <SettingsTab staffList={staffList} setStaffList={setStaffList} me={me} setMe={updateMe} />}
       </div>
 
       {toast && <div className="toast">{toast}</div>}
