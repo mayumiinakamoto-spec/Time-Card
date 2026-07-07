@@ -214,6 +214,26 @@ function formatDate(str) {
   return `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
 }
 function thisMonth() { return new Date().toISOString().slice(0,7); }
+function calcAge(birthday) {
+  if (!birthday) return null;
+  const b = new Date(birthday);
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) age--;
+  return age;
+}
+// 指定月の平日（月〜金）の日数。当月の場合は今日までカウント
+function weekdaysInMonth(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const isCurrent = monthStr === thisMonth();
+  const lastDay = isCurrent ? new Date().getDate() : new Date(y, m, 0).getDate();
+  let count = 0;
+  for (let d = 1; d <= lastDay; d++) {
+    const dow = new Date(y, m-1, d).getDay();
+    if (dow >= 1 && dow <= 5) count++;
+  }
+  return count;
+}
 
 // 出勤・退勤のペアから勤務時間(h)を計算
 function calcHours(inLog, outLog) {
@@ -442,7 +462,7 @@ function LogItem({ log, onDelete, onApprove }) {
   );
 }
 
-// ========== Summary Tab ==========
+// ========== 給与 Tab ==========
 function SummaryTab({ logs, staffList }) {
   const [month, setMonth] = useState(thisMonth);
   const [openStaff, setOpenStaff] = useState(null);
@@ -467,10 +487,16 @@ function SummaryTab({ logs, staffList }) {
       const leaveHours = leaveLogs.length * leaveHoursPerDay;
 
       const workHours = pairs.reduce((sum, p) => sum + (p.hours||0), 0);
+      const workDays = new Set(pairs.map(p=>p.date)).size;
       const totalHours = workHours + leaveHours;
-      const wage = Math.floor(totalHours * staff.hourlyRate);
 
-      return { staff, pairs, leaveLogs, workHours, leaveHours, totalHours, wage };
+      const wageType = staff.wageType || 'hourly';
+      const wage = wageType === 'hourly' ? Math.floor(totalHours * (staff.hourlyRate||0)) : (staff.monthlySalary||0);
+
+      // 月給者向け：平日ベースの欠勤日数（平日数 − 出勤日数 − 休暇日数）
+      const absentDays = Math.max(0, weekdaysInMonth(month) - workDays - leaveLogs.length);
+
+      return { staff, pairs, leaveLogs, workHours, workDays, leaveHours, totalHours, wage, wageType, absentDays };
     });
   }, [logs, staffList, month]);
 
@@ -483,27 +509,47 @@ function SummaryTab({ logs, staffList }) {
 
       {summaries.map(s => (
         <div key={s.staff.id} className="summary-card">
-          <div className="summary-name">👤 {s.staff.name}</div>
+          <div className="summary-name">👤 {s.staff.name}
+            <span style={{fontSize:12, fontWeight:400, color:'var(--text-light)', marginLeft:8}}>
+              {s.wageType==='hourly' ? '時給制' : '月給制'}
+            </span>
+          </div>
           <div className="summary-row">
-            <span className="label">勤務時間（出退勤）</span>
-            <span className="value">{s.workHours.toFixed(1)} 時間</span>
+            <span className="label">勤務時間</span>
+            <span className="value">{s.workHours.toFixed(1)} 時間（{s.workDays}日）</span>
           </div>
           <div className="summary-row">
             <span className="label">休暇日数</span>
-            <span className="value">{s.leaveLogs.length} 日（{s.leaveHours}h換算）</span>
+            <span className="value">{s.leaveLogs.length} 日</span>
           </div>
-          <div className="summary-row">
-            <span className="label">合計時間</span>
-            <span className="value">{s.totalHours.toFixed(1)} 時間</span>
-          </div>
-          <div className="summary-row">
-            <span className="label">時給</span>
-            <span className="value">¥{s.staff.hourlyRate.toLocaleString()}</span>
-          </div>
-          <div className="summary-row total">
-            <span className="label">概算給与</span>
-            <span className="value">¥{s.wage.toLocaleString()}</span>
-          </div>
+
+          {s.wageType === 'hourly' ? (
+            <>
+              <div className="summary-row">
+                <span className="label">合計時間（休暇含む）</span>
+                <span className="value">{s.totalHours.toFixed(1)} 時間</span>
+              </div>
+              <div className="summary-row">
+                <span className="label">時給</span>
+                <span className="value">¥{(s.staff.hourlyRate||0).toLocaleString()}</span>
+              </div>
+              <div className="summary-row total">
+                <span className="label">今月の給与（概算）</span>
+                <span className="value">¥{s.wage.toLocaleString()}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="summary-row">
+                <span className="label">休んだ日数（平日換算）</span>
+                <span className="value">{s.absentDays} 日</span>
+              </div>
+              <div className="summary-row total">
+                <span className="label">月給</span>
+                <span className="value">¥{s.wage.toLocaleString()}</span>
+              </div>
+            </>
+          )}
 
           <button className="detail-toggle" onClick={()=>setOpenStaff(openStaff===s.staff.id ? null : s.staff.id)}>
             {openStaff===s.staff.id ? '▲ 詳細を閉じる' : '▼ 日別詳細を見る'}
@@ -549,63 +595,138 @@ function SummaryTab({ logs, staffList }) {
   );
 }
 
-// ========== Settings Tab ==========
-function SettingsTab({ staffList, setStaffList }) {
-  const [name, setName] = useState('');
-  const [rate, setRate] = useState('');
+// ========== Settings Tab（プロフィール登録） ==========
+const EMPTY_PROFILE = {
+  name:'', furigana:'', gender:'', birthday:'', address:'', phone:'', email:'',
+  wageType:'hourly', hourlyRate:'', monthlySalary:''
+};
 
-  const addStaff = () => {
-    const n = name.trim();
-    const r = parseInt(rate);
-    if (!n) return alert('名前を入力してください');
-    if (!r || r < 0) return alert('正しい時給を入力してください');
-    if (staffList.find(s=>s.name===n)) return alert('同じ名前のスタッフが既にいます');
-    const updated = [...staffList, { id: Date.now().toString(), name: n, hourlyRate: r }];
-    setStaffList(updated);
-    save(KEYS.staff, updated);
-    setName(''); setRate('');
-  };
+function ProfileForm({ initial, onSave, onCancel, onDelete }) {
+  const [p, setP] = useState({ ...EMPTY_PROFILE, ...initial,
+    hourlyRate: initial?.hourlyRate || '', monthlySalary: initial?.monthlySalary || '' });
+  const set = (k,v) => setP(f=>({...f,[k]:v}));
+  const age = calcAge(p.birthday);
 
-  const removeStaff = (id) => {
-    if (!confirm('このスタッフを削除しますか？')) return;
-    const updated = staffList.filter(s=>s.id!==id);
-    setStaffList(updated);
-    save(KEYS.staff, updated);
-  };
-
-  const updateRate = (id, val) => {
-    const r = parseInt(val);
-    if (!r || r < 0) return;
-    const updated = staffList.map(s=>s.id===id ? {...s, hourlyRate:r} : s);
-    setStaffList(updated);
-    save(KEYS.staff, updated);
+  const handleSave = () => {
+    if (!p.name.trim()) return alert('氏名は必須です');
+    onSave({
+      ...p,
+      name: p.name.trim(),
+      hourlyRate: parseInt(p.hourlyRate) || 0,
+      monthlySalary: parseInt(p.monthlySalary) || 0,
+    });
   };
 
   return (
     <div>
+      <div className="field"><label>氏名 <span className="req">*</span></label>
+        <input type="text" placeholder="例：山田 花子" value={p.name} onChange={e=>set('name',e.target.value)} />
+      </div>
+      <div className="field"><label>ふりがな</label>
+        <input type="text" placeholder="例：やまだ はなこ" value={p.furigana} onChange={e=>set('furigana',e.target.value)} />
+      </div>
+      <div className="field"><label>性別</label>
+        <select value={p.gender} onChange={e=>set('gender',e.target.value)}>
+          <option value="">選択してください</option>
+          <option value="女性">女性</option>
+          <option value="男性">男性</option>
+          <option value="その他">その他</option>
+          <option value="回答しない">回答しない</option>
+        </select>
+      </div>
+      <div className="field"><label>誕生日{age != null && <span style={{color:'var(--green)',marginLeft:8}}>（{age}歳）</span>}</label>
+        <input type="date" value={p.birthday} onChange={e=>set('birthday',e.target.value)} />
+      </div>
+      <div className="field"><label>住所</label>
+        <input type="text" placeholder="例：神奈川県逗子市…" value={p.address} onChange={e=>set('address',e.target.value)} />
+      </div>
+      <div className="field"><label>携帯番号</label>
+        <input type="text" inputMode="tel" placeholder="例：090-1234-5678" value={p.phone} onChange={e=>set('phone',e.target.value)} />
+      </div>
+      <div className="field"><label>メールアドレス</label>
+        <input type="text" inputMode="email" placeholder="例：hanako@example.com" value={p.email} onChange={e=>set('email',e.target.value)} />
+      </div>
+      <div className="field"><label>給与の形態</label>
+        <select value={p.wageType} onChange={e=>set('wageType',e.target.value)}>
+          <option value="hourly">時給制</option>
+          <option value="monthly">月給制</option>
+        </select>
+      </div>
+      {p.wageType === 'hourly' ? (
+        <div className="field"><label>時給（円）</label>
+          <input type="number" inputMode="numeric" placeholder="例：1200" value={p.hourlyRate} onChange={e=>set('hourlyRate',e.target.value)} />
+        </div>
+      ) : (
+        <div className="field"><label>月給（円）</label>
+          <input type="number" inputMode="numeric" placeholder="例：200000" value={p.monthlySalary} onChange={e=>set('monthlySalary',e.target.value)} />
+        </div>
+      )}
+      <button className="btn-submit" onClick={handleSave}>プロフィールを保存</button>
+      <div style={{display:'flex', gap:8, marginTop:10}}>
+        <button className="btn-sm" style={{flex:1, background:'#eee'}} onClick={onCancel}>キャンセル</button>
+        {onDelete && <button className="btn-sm btn-danger" style={{flex:1}} onClick={onDelete}>このスタッフを削除</button>}
+      </div>
+    </div>
+  );
+}
+
+function SettingsTab({ staffList, setStaffList }) {
+  const [editing, setEditing] = useState(null); // 'new' | staff.id | null
+
+  const persist = updated => { setStaffList(updated); save(KEYS.staff, updated); setEditing(null); };
+
+  const handleSave = (profile, existingId) => {
+    if (existingId) {
+      persist(staffList.map(s => s.id === existingId ? { ...s, ...profile } : s));
+    } else {
+      if (staffList.find(s => s.name === profile.name)) return alert('同じ名前のスタッフが既にいます');
+      persist([...staffList, { ...profile, id: Date.now().toString() }]);
+    }
+  };
+
+  const handleDelete = id => {
+    if (!confirm('このスタッフを削除しますか？（勤怠記録は残ります）')) return;
+    persist(staffList.filter(s => s.id !== id));
+  };
+
+  if (editing === 'new') {
+    return (
       <div className="card">
-        <div className="card-title">👥 スタッフ管理</div>
-        <div className="section-header">登録済みスタッフ</div>
+        <div className="card-title">👤 新しいスタッフのプロフィール</div>
+        <ProfileForm initial={null} onSave={p=>handleSave(p, null)} onCancel={()=>setEditing(null)} />
+      </div>
+    );
+  }
+  const editingStaff = staffList.find(s => s.id === editing);
+  if (editingStaff) {
+    return (
+      <div className="card">
+        <div className="card-title">👤 {editingStaff.name} さんのプロフィール</div>
+        <ProfileForm initial={editingStaff} onSave={p=>handleSave(p, editingStaff.id)}
+          onCancel={()=>setEditing(null)} onDelete={()=>handleDelete(editingStaff.id)} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">👥 スタッフのプロフィール</div>
+        {staffList.length===0 && <p style={{fontSize:13,color:'var(--text-light)',marginBottom:12}}>まだスタッフが登録されていません</p>}
         <div className="staff-list">
-          {staffList.length===0 && <p style={{fontSize:13,color:'var(--text-light)',marginBottom:12}}>まだスタッフが登録されていません</p>}
           {staffList.map(s=>(
-            <div key={s.id} className="staff-row">
-              <span className="name">{s.name}</span>
-              <span className="wage">時給</span>
-              <input type="number" defaultValue={s.hourlyRate} style={{width:90,fontSize:14,padding:'6px 8px'}}
-                onBlur={e=>updateRate(s.id, e.target.value)} />
-              <span style={{fontSize:13}}>円</span>
-              <button className="btn-sm btn-danger" onClick={()=>removeStaff(s.id)}>削除</button>
+            <div key={s.id} className="staff-row" onClick={()=>setEditing(s.id)} style={{cursor:'pointer'}}>
+              <span className="name">{s.name}{s.furigana && <span style={{fontSize:11,fontWeight:400,color:'var(--text-light)',marginLeft:6}}>{s.furigana}</span>}</span>
+              <span className="wage">
+                {(s.wageType||'hourly')==='hourly'
+                  ? (s.hourlyRate ? `時給 ¥${s.hourlyRate.toLocaleString()}` : '時給 未設定')
+                  : (s.monthlySalary ? `月給 ¥${s.monthlySalary.toLocaleString()}` : '月給 未設定')}
+              </span>
+              <span style={{fontSize:16, color:'var(--text-light)'}}>›</span>
             </div>
           ))}
         </div>
-
-        <div className="section-header" style={{marginTop:8}}>スタッフを追加</div>
-        <div className="add-staff-form">
-          <input type="text" placeholder="名前" value={name} onChange={e=>setName(e.target.value)} />
-          <input type="number" placeholder="時給（円）" value={rate} onChange={e=>setRate(e.target.value)} />
-        </div>
-        <button className="btn-sm btn-add" style={{width:'100%',padding:'12px',fontSize:15,marginTop:4}} onClick={addStaff}>
+        <button className="btn-sm btn-add" style={{width:'100%',padding:'12px',fontSize:15,marginTop:4}} onClick={()=>setEditing('new')}>
           ＋ スタッフを追加する
         </button>
       </div>
@@ -614,8 +735,9 @@ function SettingsTab({ staffList, setStaffList }) {
         <div className="card-title" style={{color:'#b07d00'}}>ℹ️ 給与計算について</div>
         <p style={{fontSize:13,lineHeight:1.7,color:'var(--text-light)'}}>
           出勤・退勤の時刻から自動で勤務時間を計算します。<br/>
-          休暇（有給・代休・振休）は <strong>1日＝8時間</strong> として換算されます。<br/>
-          「集計」タブで月ごとの給与見込みを確認できます。
+          <strong>時給制</strong>：休暇1日＝8時間換算で合計金額を表示。<br/>
+          <strong>月給制</strong>：稼働時間と休んだ日数（平日換算）を表示。<br/>
+          「給与」タブで月ごとに確認できます。
         </p>
       </div>
     </div>
@@ -785,7 +907,7 @@ function App() {
     { key:'week',     label:'週報', icon:'📋' },
     { key:'leave',    label:'休暇', icon:'🌿' },
     { key:'list',     label:'一覧', icon:'📂' },
-    { key:'summary',  label:'集計', icon:'📊' },
+    { key:'summary',  label:'給与', icon:'💰' },
     { key:'settings', label:'設定', icon:'⚙️' },
   ];
 
