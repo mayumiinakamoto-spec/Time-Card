@@ -192,7 +192,10 @@ const KEYS = {
   me: 'jimotos_me_v1',
   sync: 'jimotos_sync_url_v1',
   syncToken: 'jimotos_sync_token_v1',
+  adminPin: 'jimotos_admin_pin_v1',
 };
+
+function getAdminPin() { return load(KEYS.adminPin, ''); }
 
 // ===== クラウド同期（Google Apps Script） =====
 function getSyncUrl() { return load(KEYS.sync, ''); }
@@ -270,13 +273,14 @@ function weekdaysInMonth(monthStr) {
   return count;
 }
 
-// 出勤・退勤のペアから勤務時間(h)を計算
+// 出勤・退勤のペアから勤務時間(h)を計算（15分単位で切り捨て）
 function calcHours(inLog, outLog) {
   if (!inLog || !outLog) return 0;
   const inDt = new Date(`${inLog.date}T${inLog.time}`);
   const outDt = new Date(`${outLog.date}T${outLog.time}`);
-  const diff = (outDt - inDt) / 3600000;
-  return diff > 0 ? diff : 0;
+  const mins = (outDt - inDt) / 60000;
+  if (mins <= 0) return 0;
+  return Math.floor(mins / 15) * 15 / 60;
 }
 
 // ========== Staff Selector ==========
@@ -299,13 +303,15 @@ function StaffSelect({ value, onChange, staffList }) {
 }
 
 // ========== Forms ==========
-function InForm({ onSubmit, staffList, defaultStaff }) {
+function InForm({ onSubmit, staffList, defaultStaff, isAdmin }) {
   const [form, setForm] = useState({ staff:defaultStaff||'', date:today(), time:nowTime(), location:'', tasks:'' });
   const set = (k,v) => setForm(f => ({...f,[k]:v}));
   const handle = e => {
     e.preventDefault();
     if (!form.staff || !form.location) return alert('スタッフ名と勤務場所は必須です');
-    onSubmit({ type:'in', ...form, createdAt: new Date().toISOString() });
+    // 打刻時刻はボタンを押した瞬間で確定（管理者のみ手動指定可）
+    const stamp = isAdmin ? { date:form.date, time:form.time } : { date:today(), time:nowTime() };
+    onSubmit({ type:'in', ...form, ...stamp, createdAt: new Date().toISOString() });
     setForm(f => ({ staff:f.staff, date:today(), time:nowTime(), location:'', tasks:'' }));
   };
   return (
@@ -315,12 +321,20 @@ function InForm({ onSubmit, staffList, defaultStaff }) {
         <div className="field"><label>スタッフ名 <span className="req">*</span></label>
           <StaffSelect value={form.staff} onChange={v=>set('staff',v)} staffList={staffList} />
         </div>
-        <div className="field"><label>出勤日時</label>
-          <div className="date-time-row">
-            <input type="date" value={form.date} onChange={e=>set('date',e.target.value)} />
-            <input type="time" value={form.time} onChange={e=>set('time',e.target.value)} />
+        {isAdmin ? (
+          <div className="field"><label>出勤日時（管理者修正用）</label>
+            <div className="date-time-row">
+              <input type="date" value={form.date} onChange={e=>set('date',e.target.value)} />
+              <input type="time" value={form.time} onChange={e=>set('time',e.target.value)} />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="field"><label>出勤時刻</label>
+            <p style={{fontSize:14, padding:'12px 14px', background:'var(--green-light)', borderRadius:8, color:'var(--green)'}}>
+              🕐 送信ボタンを押した時刻が自動で記録されます
+            </p>
+          </div>
+        )}
         <div className="field"><label>勤務場所 <span className="req">*</span></label>
           <select value={form.location} onChange={e=>set('location',e.target.value)}>
             <option value="">選択してください</option>
@@ -336,13 +350,14 @@ function InForm({ onSubmit, staffList, defaultStaff }) {
   );
 }
 
-function OutForm({ onSubmit, staffList, defaultStaff }) {
+function OutForm({ onSubmit, staffList, defaultStaff, isAdmin }) {
   const [form, setForm] = useState({ staff:defaultStaff||'', date:today(), time:nowTime(), done:'', undone:'', note:'' });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const handle = e => {
     e.preventDefault();
     if (!form.staff) return alert('スタッフ名は必須です');
-    onSubmit({ type:'out', ...form, approved: false, createdAt: new Date().toISOString() });
+    const stamp = isAdmin ? { date:form.date, time:form.time } : { date:today(), time:nowTime() };
+    onSubmit({ type:'out', ...form, ...stamp, approved: false, createdAt: new Date().toISOString() });
     setForm(f => ({ staff:f.staff, date:today(), time:nowTime(), done:'', undone:'', note:'' }));
   };
   return (
@@ -352,12 +367,20 @@ function OutForm({ onSubmit, staffList, defaultStaff }) {
         <div className="field"><label>スタッフ名 <span className="req">*</span></label>
           <StaffSelect value={form.staff} onChange={v=>set('staff',v)} staffList={staffList} />
         </div>
-        <div className="field"><label>退勤日時</label>
-          <div className="date-time-row">
-            <input type="date" value={form.date} onChange={e=>set('date',e.target.value)} />
-            <input type="time" value={form.time} onChange={e=>set('time',e.target.value)} />
+        {isAdmin ? (
+          <div className="field"><label>退勤日時（管理者修正用）</label>
+            <div className="date-time-row">
+              <input type="date" value={form.date} onChange={e=>set('date',e.target.value)} />
+              <input type="time" value={form.time} onChange={e=>set('time',e.target.value)} />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="field"><label>退勤時刻</label>
+            <p style={{fontSize:14, padding:'12px 14px', background:'#fff3e0', borderRadius:8, color:'#e65100'}}>
+              🕐 送信ボタンを押した時刻が自動で記録されます
+            </p>
+          </div>
+        )}
         <div className="field"><label>完了したタスク</label>
           <textarea placeholder="今日完了したタスクを記入" value={form.done} onChange={e=>set('done',e.target.value)} />
         </div>
@@ -441,7 +464,7 @@ function LeaveForm({ onSubmit, staffList, defaultStaff }) {
 }
 
 // ========== Log Item ==========
-function LogItem({ log, onDelete, onApprove }) {
+function LogItem({ log, onDelete, onApprove, onEditTime, isAdmin }) {
   const typeInfo = TYPES.find(t=>t.key===log.type);
   const rows = [];
   if (log.type==='in') {
@@ -485,13 +508,18 @@ function LogItem({ log, onDelete, onApprove }) {
         ))}
       </div>
       <div className="log-actions">
-        {needsApproval && !log.approved && (
-          <button className="btn-sm btn-approve" onClick={()=>onApprove(log.id)}>承認する</button>
-        )}
         {needsApproval && log.approved && (
           <button className="btn-sm btn-approved" disabled>✓ 承認済み</button>
         )}
-        <button className="btn-sm btn-danger" onClick={()=>{ if(confirm('この記録を削除しますか？')) onDelete(log.id) }}>削除</button>
+        {isAdmin && needsApproval && !log.approved && (
+          <button className="btn-sm btn-approve" onClick={()=>onApprove(log.id)}>承認する</button>
+        )}
+        {isAdmin && (log.type==='in' || log.type==='out') && (
+          <button className="btn-sm btn-add" onClick={()=>onEditTime(log)}>時刻修正</button>
+        )}
+        {isAdmin && (
+          <button className="btn-sm btn-danger" onClick={()=>{ if(confirm('この記録を削除しますか？')) onDelete(log.id) }}>削除</button>
+        )}
       </div>
     </div>
   );
@@ -705,9 +733,28 @@ function ProfileForm({ initial, onSave, onCancel, onDelete }) {
   );
 }
 
-function SettingsTab({ staffList, setStaffList, me, setMe }) {
+function SettingsTab({ staffList, setStaffList, me, setMe, adminPin, setAdminPin }) {
   const [editing, setEditing] = useState(null); // 'new' | staff.id | null
   const [syncUrl, setSyncUrl] = useState(()=>load(KEYS.sync,''));
+  const [pinInput, setPinInput] = useState('');
+
+  const enableAdmin = async () => {
+    const pin = pinInput.trim();
+    if (!pin) return alert('暗証番号を入力してください');
+    const url = getSyncUrl();
+    if (!url) return alert('先にクラウド同期を設定してください');
+    try {
+      const r = await fetch(url, { method:'POST', body: JSON.stringify({ action:'adminCheck', token:getSyncToken(), adminPin: pin }) });
+      const d = await r.json();
+      if (d.admin) {
+        setAdminPin(pin);
+        setPinInput('');
+        alert('管理者モードを有効にしました 🔑');
+      } else {
+        alert('暗証番号が違います');
+      }
+    } catch (e) { alert('確認に失敗しました。通信環境を確認してください'); }
+  };
   const [syncToken, setSyncToken] = useState(()=>load(KEYS.syncToken,''));
 
   const saveSyncUrl = () => {
@@ -790,6 +837,29 @@ function SettingsTab({ staffList, setStaffList, me, setMe }) {
       </div>
 
       <div className="card">
+        <div className="card-title">🔑 管理者モード</div>
+        {adminPin ? (
+          <div>
+            <p style={{fontSize:14, color:'var(--green)', fontWeight:700, marginBottom:10}}>✓ 管理者モードが有効です</p>
+            <p style={{fontSize:12, color:'var(--text-light)', marginBottom:10}}>打刻の時刻修正・承認・削除ができます。</p>
+            <button className="btn-sm btn-danger" onClick={()=>{ setAdminPin(''); alert('管理者モードを解除しました'); }}>管理者モードを解除</button>
+          </div>
+        ) : (
+          <div>
+            <p style={{fontSize:13, color:'var(--text-light)', marginBottom:10, lineHeight:1.6}}>
+              管理者（まゆみさん）専用です。打刻の修正・承認・削除には暗証番号が必要です。
+            </p>
+            <div className="field"><label>暗証番号</label>
+              <input type="password" inputMode="numeric" placeholder="管理者の暗証番号" value={pinInput} onChange={e=>setPinInput(e.target.value)} />
+            </div>
+            <button className="btn-sm btn-add" style={{width:'100%',padding:'12px',fontSize:15}} onClick={enableAdmin}>
+              管理者モードを有効にする
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
         <div className="card-title">☁️ クラウド同期</div>
         <p style={{fontSize:13, color:'var(--text-light)', marginBottom:10, lineHeight:1.6}}>
           Googleスプレッドシートと連携すると、全スタッフの記録が1か所に集まり、管理者がどの端末からでも確認できます。
@@ -820,7 +890,7 @@ function SettingsTab({ staffList, setStaffList, me, setMe }) {
 }
 
 // ========== List Tab ==========
-function ListTab({ logs, onDelete, onApprove }) {
+function ListTab({ logs, onDelete, onApprove, onEditTime, isAdmin }) {
   const [filter, setFilter] = useState({ date:'', staff:'', type:'' });
   const setF = (k,v) => setFilter(f=>({...f,[k]:v}));
 
@@ -868,7 +938,7 @@ function ListTab({ logs, onDelete, onApprove }) {
           <p>記録がありません。<br/>各タブから報告を送信してください。</p>
         </div>
       ) : (
-        filtered.map(l=><LogItem key={l.id} log={l} onDelete={onDelete} onApprove={onApprove} />)
+        filtered.map(l=><LogItem key={l.id} log={l} onDelete={onDelete} onApprove={onApprove} onEditTime={onEditTime} isAdmin={isAdmin} />)
       )}
     </div>
   );
@@ -908,8 +978,11 @@ function App() {
   const [nfcResult, setNfcResult] = useState(null);
   const [me, setMe] = useState(()=>load(KEYS.me,''));
   const [syncing, setSyncing] = useState(false);
+  const [adminPin, setAdminPin] = useState(()=>load(KEYS.adminPin,''));
+  const isAdmin = !!adminPin;
 
   const updateMe = name => { setMe(name); save(KEYS.me, name); };
+  const updateAdminPin = pin => { setAdminPin(pin); save(KEYS.adminPin, pin); };
 
   // クラウドから最新の記録を取得してローカルと統合
   const syncFromCloud = useCallback(async (silent) => {
@@ -995,18 +1068,38 @@ function App() {
   };
 
   const handleDelete = id => {
+    if (!isAdmin) return alert('削除は管理者のみ可能です');
     const updated = logs.filter(l=>l.id!==id);
     setLogs(updated);
     save(KEYS.logs, updated);
-    cloudPost({ action:'delete', id });
+    cloudPost({ action:'delete', id, adminPin });
   };
 
   const handleApprove = id => {
+    if (!isAdmin) return alert('承認は管理者のみ可能です');
     const updated = logs.map(l=>l.id===id ? {...l, approved:true} : l);
     setLogs(updated);
     save(KEYS.logs, updated);
-    cloudPost({ action:'approve', id });
+    cloudPost({ action:'approve', id, adminPin });
     showToast('承認しました ✓');
+  };
+
+  // 管理者による打刻時刻の修正
+  const handleEditTime = log => {
+    if (!isAdmin) return alert('時刻修正は管理者のみ可能です');
+    const newDate = prompt('日付を入力（例：2026-07-08）', log.date);
+    if (newDate === null) return;
+    const newTime = prompt('時刻を入力（例：09:00）', log.time);
+    if (newTime === null) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate.trim()) || !/^\d{1,2}:\d{2}$/.test(newTime.trim())) {
+      return alert('形式が正しくありません（日付：2026-07-08、時刻：09:00）');
+    }
+    const updatedLog = { ...log, date: newDate.trim(), time: newTime.trim(), editedByAdmin: true };
+    const updated = logs.map(l=>l.id===log.id ? updatedLog : l);
+    setLogs(updated);
+    save(KEYS.logs, updated);
+    cloudPost({ action:'update', log: updatedLog, adminPin });
+    showToast('時刻を修正しました ✓');
   };
 
   const TABS = [
@@ -1041,13 +1134,13 @@ function App() {
       </div>
 
       <div className="content">
-        {tab==='in'       && <InForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} />}
-        {tab==='out'      && <OutForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} />}
+        {tab==='in'       && <InForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} isAdmin={isAdmin} />}
+        {tab==='out'      && <OutForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} isAdmin={isAdmin} />}
         {tab==='week'     && <WeekForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} />}
         {tab==='leave'    && <LeaveForm key={me} onSubmit={handleSubmit} staffList={staffList} defaultStaff={me} />}
-        {tab==='list'     && <ListTab logs={logs} onDelete={handleDelete} onApprove={handleApprove} />}
+        {tab==='list'     && <ListTab logs={logs} onDelete={handleDelete} onApprove={handleApprove} onEditTime={handleEditTime} isAdmin={isAdmin} />}
         {tab==='summary'  && <SummaryTab logs={logs} staffList={staffList} />}
-        {tab==='settings' && <SettingsTab staffList={staffList} setStaffList={setStaffList} me={me} setMe={updateMe} />}
+        {tab==='settings' && <SettingsTab staffList={staffList} setStaffList={setStaffList} me={me} setMe={updateMe} adminPin={adminPin} setAdminPin={updateAdminPin} />}
       </div>
 
       {toast && <div className="toast">{toast}</div>}

@@ -5,6 +5,7 @@
 
 const SHEET_NAME = 'logs';
 const TOKEN = '47957f48fb964cd98a127c56'; // 合言葉：これが一致しない要求は拒否
+const ADMIN_PIN = '126865'; // 管理者暗証番号：承認・削除・時刻修正に必要
 
 function unauthorized_() {
   return ContentService
@@ -44,6 +45,27 @@ function doPost(e) {
     const data = JSON.parse(e.postData.contents);
     if (data.token !== TOKEN) return unauthorized_();
     const sheet = getSheet_();
+    const isAdmin = data.adminPin === ADMIN_PIN;
+
+    // 管理者暗証番号の確認（アプリの管理者モード有効化に使う）
+    if (data.action === 'adminCheck') {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, admin: isAdmin }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 承認・削除・時刻修正は管理者のみ
+    if ((data.action === 'approve' || data.action === 'delete' || data.action === 'update') && !isAdmin) {
+      return unauthorized_();
+    }
+
+    // 管理者による記録の修正（時刻修正など）
+    if (data.action === 'update' && data.log && data.log.id) {
+      const row = findRow_(sheet, data.log.id);
+      if (row > 0) {
+        sheet.getRange(row, 5).setValue(JSON.stringify(data.log));
+      }
+    }
 
     if (data.action === 'add' && data.log && data.log.id) {
       sheet.appendRow([
