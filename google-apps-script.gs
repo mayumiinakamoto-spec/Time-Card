@@ -4,6 +4,13 @@
 // 実行ユーザー: 自分 / アクセスできるユーザー: 全員
 
 const SHEET_NAME = 'logs';
+const TOKEN = '47957f48fb964cd98a127c56'; // 合言葉：これが一致しない要求は拒否
+
+function unauthorized_() {
+  return ContentService
+    .createTextOutput(JSON.stringify({ error: 'unauthorized' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
 
 function getSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -16,7 +23,8 @@ function getSheet_() {
 }
 
 // 記録の一覧を返す（アプリが読み込むとき）
-function doGet() {
+function doGet(e) {
+  if (!e || !e.parameter || e.parameter.token !== TOKEN) return unauthorized_();
   const sheet = getSheet_();
   const rows = sheet.getDataRange().getValues();
   const logs = [];
@@ -34,6 +42,7 @@ function doPost(e) {
   lock.waitLock(10000);
   try {
     const data = JSON.parse(e.postData.contents);
+    if (data.token !== TOKEN) return unauthorized_();
     const sheet = getSheet_();
 
     if (data.action === 'add' && data.log && data.log.id) {

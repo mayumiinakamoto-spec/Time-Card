@@ -191,16 +191,18 @@ const KEYS = {
   staff: 'jimotos_staff_v2',
   me: 'jimotos_me_v1',
   sync: 'jimotos_sync_url_v1',
+  syncToken: 'jimotos_sync_token_v1',
 };
 
 // ===== クラウド同期（Google Apps Script） =====
 function getSyncUrl() { return load(KEYS.sync, ''); }
+function getSyncToken() { return load(KEYS.syncToken, ''); }
 
 async function cloudPost(payload) {
   const url = getSyncUrl();
   if (!url) return false;
   try {
-    await fetch(url, { method: 'POST', body: JSON.stringify(payload) });
+    await fetch(url, { method: 'POST', body: JSON.stringify({ ...payload, token: getSyncToken() }) });
     return true;
   } catch (e) { console.warn('cloud sync failed', e); return false; }
 }
@@ -209,7 +211,8 @@ async function cloudFetchLogs() {
   const url = getSyncUrl();
   if (!url) return null;
   try {
-    const r = await fetch(url);
+    const sep = url.includes('?') ? '&' : '?';
+    const r = await fetch(url + sep + 'token=' + encodeURIComponent(getSyncToken()));
     const d = await r.json();
     return Array.isArray(d.logs) ? d.logs : null;
   } catch (e) { console.warn('cloud fetch failed', e); return null; }
@@ -705,6 +708,7 @@ function ProfileForm({ initial, onSave, onCancel, onDelete }) {
 function SettingsTab({ staffList, setStaffList, me, setMe }) {
   const [editing, setEditing] = useState(null); // 'new' | staff.id | null
   const [syncUrl, setSyncUrl] = useState(()=>load(KEYS.sync,''));
+  const [syncToken, setSyncToken] = useState(()=>load(KEYS.syncToken,''));
 
   const saveSyncUrl = () => {
     const u = syncUrl.trim();
@@ -712,6 +716,7 @@ function SettingsTab({ staffList, setStaffList, me, setMe }) {
       return alert('Google Apps ScriptのURL（https://script.google.com/…）を入力してください');
     }
     save(KEYS.sync, u);
+    save(KEYS.syncToken, syncToken.trim());
     alert(u ? 'クラウド同期を設定しました ☁️' : 'クラウド同期を解除しました');
   };
 
@@ -793,8 +798,11 @@ function SettingsTab({ staffList, setStaffList, me, setMe }) {
           <input type="text" placeholder="https://script.google.com/macros/s/…/exec"
             value={syncUrl} onChange={e=>setSyncUrl(e.target.value)} />
         </div>
+        <div className="field"><label>合言葉（管理者から教えてもらってください）</label>
+          <input type="text" placeholder="例：abc123…" value={syncToken} onChange={e=>setSyncToken(e.target.value)} />
+        </div>
         <button className="btn-sm btn-add" style={{width:'100%',padding:'12px',fontSize:15}} onClick={saveSyncUrl}>
-          同期URLを保存
+          同期設定を保存
         </button>
       </div>
 
