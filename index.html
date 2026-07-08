@@ -235,23 +235,27 @@ function load(key, def) {
 }
 function save(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
-function today() { return new Date().toISOString().slice(0, 10); }
+// 日本時間（端末のローカル時刻）で日付・時刻を取得
+function localDateStr(d) {
+  return d.getFullYear() + '-' + (d.getMonth()+1).toString().padStart(2,'0') + '-' + d.getDate().toString().padStart(2,'0');
+}
+function today() { return localDateStr(new Date()); }
 function nowTime() {
   const d = new Date();
   return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
 }
 function getWeekStart(dateStr) {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr + 'T00:00:00');
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.setDate(diff)).toISOString().slice(0,10);
+  return localDateStr(new Date(d.getFullYear(), d.getMonth(), diff));
 }
 function formatDate(str) {
   if (!str) return '';
   const d = new Date(str + 'T00:00:00');
   return `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
 }
-function thisMonth() { return new Date().toISOString().slice(0,7); }
+function thisMonth() { return today().slice(0,7); }
 function calcAge(birthday) {
   if (!birthday) return null;
   const b = new Date(birthday);
@@ -1013,7 +1017,7 @@ function App() {
     if (!staffParam) return;
 
     const now = new Date();
-    const date = now.toISOString().slice(0,10);
+    const date = localDateStr(now);
     const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
 
     // 今日の出勤記録があるか確認
