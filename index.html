@@ -205,9 +205,20 @@ async function cloudPost(payload) {
   const url = getSyncUrl();
   if (!url) return false;
   try {
-    await fetch(url, { method: 'POST', body: JSON.stringify({ ...payload, token: getSyncToken() }) });
-    return true;
+    const r = await fetch(url, { method: 'POST', body: JSON.stringify({ ...payload, token: getSyncToken() }) });
+    const d = await r.json().catch(() => ({}));
+    return d.ok === true; // サーバーが受理した場合のみ成功扱い
   } catch (e) { console.warn('cloud sync failed', e); return false; }
+}
+
+// クラウドに届いたことが確認できた記録のID一覧
+function getUploadedIds() { return new Set(load('jimotos_uploaded_ids_v1', [])); }
+function markUploaded(id) {
+  const ids = load('jimotos_uploaded_ids_v1', []);
+  if (!ids.includes(id)) {
+    ids.push(id);
+    save('jimotos_uploaded_ids_v1', ids.slice(-1000));
+  }
 }
 
 async function cloudFetchLogs() {
@@ -988,22 +999,34 @@ function App() {
   const updateMe = name => { setMe(name); save(KEYS.me, name); };
   const updateAdminPin = pin => { setAdminPin(pin); save(KEYS.adminPin, pin); };
 
-  // クラウドから最新の記録を取得してローカルと統合
+  // クラウドから最新の記録を取得してローカルと統合。
+  // クラウドに届いていないローカルの記録があれば自動で再送する（送信失敗からの回復）
   const syncFromCloud = useCallback(async (silent) => {
     if (!getSyncUrl()) return;
     setSyncing(true);
     const cloud = await cloudFetchLogs();
-    setSyncing(false);
     if (cloud) {
+      // クラウドに無い＆アップロード確認が取れていないローカル記録を再送
+      const cloudIds = new Set(cloud.map(l => l.id));
+      const uploaded = getUploadedIds();
+      const localLogs = load(KEYS.logs, []);
+      const pending = localLogs.filter(l => l.id && !cloudIds.has(l.id) && !uploaded.has(l.id));
+      let recovered = 0;
+      for (const log of pending) {
+        const ok = await cloudPost({ action:'add', log });
+        if (ok) { markUploaded(log.id); cloud.push(log); recovered++; }
+      }
       setLogs(prev => {
         const merged = mergeLogs(prev, cloud);
         save(KEYS.logs, merged);
         return merged;
       });
-      if (!silent) showToast('クラウドと同期しました ☁️');
+      if (recovered > 0) showToast(`未送信だった ${recovered} 件をクラウドに送信しました ☁️`);
+      else if (!silent) showToast('クラウドと同期しました ☁️');
     } else if (!silent) {
       showToast('同期に失敗しました');
     }
+    setSyncing(false);
   }, []);
 
   // 起動時と、一覧・給与タブを開いたときに自動同期
@@ -1041,7 +1064,7 @@ function App() {
     const updated = [newLog, ...todayLogs];
     save(KEYS.logs, updated);
     setLogs(updated);
-    cloudPost({ action:'add', log:newLog });
+    cloudPost({ action:'add', log:newLog }).then(ok => { if (ok) markUploaded(newLog.id); });
     setNfcResult({ type: newLog.type, staffName: staffParam, time, date });
 
     // URLパラメーターをクリア（ブラウザの履歴を汚さない）
@@ -1066,7 +1089,7 @@ function App() {
     // 送信した名前を「この端末の利用者」として記憶 → 次回から自動入力
     if (newLog.staff) updateMe(newLog.staff);
 
-    cloudPost({ action:'add', log:newLog });
+    cloudPost({ action:'add', log:newLog }).then(ok => { if (ok) markUploaded(newLog.id); });
     showToast('送信しました ✓');
     setTab('list');
   };
